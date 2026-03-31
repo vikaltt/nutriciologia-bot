@@ -282,15 +282,97 @@ app.use('/bot', (req, res) => {
 
 app.get('/', (req, res) => res.send('Nutriciologia Bot running'));
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nutriciologia-admin';
+app.get('/admin', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Nutriciologia Admin</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    h1 { color: #333; }
+    h2 { color: #555; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background: #4CAF50; color: white; font-weight: 600; }
+    tr:hover { background: #f9f9f9; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+    .badge-client { background: #e3f2fd; color: #1976d2; }
+    .badge-nutritionist { background: #fff3e0; color: #f57c00; }
+    .empty { color: #999; font-style: italic; }
+    .stat { display: inline-block; background: #4CAF50; color: white; padding: 8px 16px; border-radius: 8px; margin-right: 10px; }
+    .section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+  <h1>🍏 Nutriciologia Admin</h1>
+  <div class="section">
+    <span class="stat">👥 Профилей: ${profiles.length}</span>
+    <span class="stat">📝 Анкет: ${surveys.length}</span>
+    <span class="stat">📊 Чек-инов: ${checkIns.length}</span>
+  </div>
+  
+  <div class="section">
+    <h2>👥 Пользователи</h2>
+    ${profiles.length === 0 ? '<p class="empty">Нет пользователей</p>' : `
+    <table>
+      <tr><th>ID</th><th>Имя</th><th>Telegram ID</th><th>Роль</th><th>Дата</th></tr>
+      ${profiles.map(p => `<tr>
+        <td>${p.id}</td>
+        <td>${p.full_name}</td>
+        <td>${p.telegram_id}</td>
+        <td><span class="badge badge-${p.role}">${p.role}</span></td>
+        <td>${new Date(p.created).toLocaleDateString('ru-RU')}</td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+  
+  <div class="section">
+    <h2>📝 Анкеты</h2>
+    ${surveys.length === 0 ? '<p class="empty">Нет анкет</p>' : `
+    <table>
+      <tr><th>ID</th><th>Пользователь</th><th>Цель</th><th>Ограничения</th><th>Бюджет</th><th>Дата</th></tr>
+      ${surveys.map(s => {
+        const profile = profiles.find(p => p.id === s.client_id);
+        return `<tr>
+          <td>${s.id}</td>
+          <td>${profile ? profile.full_name : '?'}</td>
+          <td>${s.goals || '-'}</td>
+          <td>${s.restrictions || '-'}</td>
+          <td>${s.budget || '-'}</td>
+          <td>${new Date(s.created).toLocaleDateString('ru-RU')}</td>
+        </tr>`;
+      }).join('')}
+    </table>`}
+  </div>
+  
+  <div class="section">
+    <h2>📊 Последние чек-ины</h2>
+    ${checkIns.length === 0 ? '<p class="empty">Нет чек-инов</p>' : `
+    <table>
+      <tr><th>ID</th><th>Пользователь</th><th>Вода (мл)</th><th>Вес (кг)</th><th>Питание</th><th>Дата</th></tr>
+      ${checkIns.map(ci => {
+        const profile = profiles.find(p => p.id === ci.client_id);
+        return `<tr>
+          <td>${ci.id}</td>
+          <td>${profile ? profile.full_name : '?'}</td>
+          <td>${ci.water_ml}</td>
+          <td>${ci.weight || '-'}</td>
+          <td>${ci.food_log || '-'}</td>
+          <td>${ci.date}</td>
+        </tr>`;
+      }).join('')}
+    </table>`}
+  </div>
+</body>
+</html>`);
+});
 
 app.get('/admin/profiles', (req, res) => {
-  const secret = req.query.secret || req.headers['x-admin-secret'] || 'nutriciologia-admin';
   res.json({ profiles, surveys, checkIns: checkIns.slice(-20) });
 });
 
 app.get('/admin/plans', (req, res) => {
-  const secret = req.query.secret || req.headers['x-admin-secret'] || 'nutriciologia-admin';
   res.json(nutritionPlans);
 });
 
