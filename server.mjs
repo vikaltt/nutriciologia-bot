@@ -10,6 +10,7 @@ import path from 'path';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
+const AI_MODEL = process.env.AI_MODEL || 'openai/gpt-3.5-turbo';
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -109,7 +110,7 @@ function createCheckIn(clientId, data) {
 
 async function generateNutritionPlan(profile, survey) {
   const completion = await openai.chat.completions.create({
-    model: 'openai/gpt-3.5-turbo',
+    model: AI_MODEL,
     messages: [{ role: 'user', content: `Создай план питания JSON для ${profile.full_name}. Цель: ${survey.goals}. Верни JSON с полями calories, protein, fat, carbs, meals (массив с name, time, options, calories).` }],
     max_tokens: 1000
   });
