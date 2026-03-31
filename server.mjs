@@ -130,7 +130,24 @@ bot.command('start', async (ctx) => {
     if (!profile) {
       profile = createProfile(telegramId, firstName);
     }
-    await ctx.reply(`👋 Добро пожаловать, ${firstName}!\n\n/survey - анкета\n/plan - план питания\n/checkin - чек-ин\n/progress - прогресс`);
+    
+    const keyboard = {
+      keyboard: [
+        ['📋 Заполнить анкету'],
+        ['🍽️ Получить план питания'],
+        ['📝 Чек-ин'],
+        ['📊 Мой прогресс']
+      ],
+      resize_keyboard: true
+    };
+    
+    await ctx.reply(`👋 Добро пожаловать, ${firstName}!
+
+Я помогу тебе составить персональный план питания и отслеживать прогресс.
+
+Выбери действие:`, {
+      reply_markup: keyboard
+    });
   } catch (e) {
     console.error(e);
     await ctx.reply('Ошибка. Попробуйте позже.');
@@ -140,8 +157,24 @@ bot.command('start', async (ctx) => {
 bot.command('survey', async (ctx) => {
   const userId = ctx.from?.id;
   const telegramId = ctx.from?.id.toString();
+  const firstName = ctx.from?.first_name || 'друг';
+  
   userStates.set(userId, { step: 'goals', data: { telegramId } });
-  await ctx.reply('📋 Анкета\n\n1️⃣ Цель? (Похудеть/Набрать/Поддержать/Здоровье)');
+  
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '🎯 Похудеть', callback_data: 'goal_Похудеть' }],
+      [{ text: '💪 Набрать массу', callback_data: 'goal_Набрать массу' }],
+      [{ text: '⚖️ Поддержать вес', callback_data: 'goal_Поддержать вес' }],
+      [{ text: '❤️ Улучшить здоровье', callback_data: 'goal_Улучшить здоровье' }]
+    ]
+  };
+  
+  await ctx.reply(`📋 Привет, ${firstName}! Давай заполним анкету.
+
+❓ **Какова твоя основная цель?**`, {
+    reply_markup: keyboard
+  });
 });
 
 bot.command('plan', async (ctx) => {
@@ -149,20 +182,70 @@ bot.command('plan', async (ctx) => {
   try {
     let profile = findProfile(telegramId);
     if (!profile) {
-      await ctx.reply('Сначала /start');
+      await ctx.reply('Сначала нажми /start чтобы зарегистрироваться');
       return;
     }
     
     const survey = findSurvey(profile.id);
     if (!survey) {
-      await ctx.reply('Сначала /survey');
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '📋 Заполнить анкету', callback_data: 'cmd_survey' }]
+        ]
+      };
+      await ctx.reply('Сначала нужно заполнить анкету!', {
+        reply_markup: keyboard
+      });
       return;
     }
     
-    await ctx.reply('🔄 Генерирую план...');
+    await ctx.reply('🔄 Генерирую твой персональный план питания...\n\nЭто займёт около минуты...');
     const planData = await generateNutritionPlan(profile, survey);
     createNutritionPlan(profile.id, planData);
-    await ctx.reply(`✅ План: ${planData.calories}ккал, белки:${planData.protein}г, жиры:${planData.fat}г, углеводы:${planData.carbs}г`);
+    
+    let response = `✅ **ПЛАН ПИТАНИЯ СОЗДАН!**\n\n`;
+    response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    response += `📊 **СУТОЧНАЯ НОРМА:**\n`;
+    response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    response += `🔥 Калории: ${planData.calories} ккал\n`;
+    response += `🥩 Белки: ${planData.protein}г\n`;
+    response += `🥑 Жиры: ${planData.fat}г\n`;
+    response += `🍚 Углеводы: ${planData.carbs}г\n\n`;
+    
+    response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    response += `🍽️ **ПРИЁМЫ ПИЩИ:**\n`;
+    response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    
+    if (planData.meals && planData.meals.length > 0) {
+      for (const meal of planData.meals) {
+        response += `\n⏰ ${meal.time} — ${meal.name}\n`;
+        response += `   Калории: ${meal.calories}\n`;
+        if (meal.options && meal.options.length > 0) {
+          response += `   Варианты: ${meal.options.join(', ')}\n`;
+        }
+      }
+    }
+    
+    response += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+    response += `📝 **ОБЩИЕ РЕКОМЕНДАЦИИ:**\n`;
+    response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    response += `• Пей 2-3 литра воды в день\n`;
+    response += `• Ешь 4-5 раз в день небольшими порциями\n`;
+    response += `• Последний приём пищи за 3 часа до сна\n`;
+    response += `• Больше овощей и фруктов\n`;
+    response += `• Ограничь сладкое и жирное\n`;
+    response += `• Больше двигайся - минимум 30 мин в день\n`;
+    
+    await ctx.reply(response, { parse_mode: 'Markdown' });
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '📝 Сделать чек-ин', callback_data: 'cmd_checkin' }],
+        [{ text: '📊 Мой прогресс', callback_data: 'cmd_progress' }]
+      ]
+    };
+    await ctx.reply('Что делаем дальше?', { reply_markup: keyboard });
+    
   } catch (e) {
     console.error(e);
     await ctx.reply('Ошибка. Попробуйте позже.');
@@ -172,8 +255,22 @@ bot.command('plan', async (ctx) => {
 bot.command('checkin', async (ctx) => {
   const userId = ctx.from?.id;
   const telegramId = ctx.from?.id.toString();
+  
   userStates.set(userId, { step: 'checkin_water', data: { telegramId } });
-  await ctx.reply('📝 Чек-ин\n\n1️⃣ Вода (мл)?');
+  
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '💧 1000 мл', callback_data: 'water_1000' }],
+      [{ text: '💧 1500 мл', callback_data: 'water_1500' }],
+      [{ text: '💧 2000 мл', callback_data: 'water_2000' }],
+      [{ text: '💧 Другое', callback_data: 'water_custom' }]
+    ]
+  };
+  
+  await ctx.reply('📝 **ЧЕК-ИН**\n\nСколько воды ты выпил сегодня?', {
+    reply_markup: keyboard,
+    parse_mode: 'Markdown'
+  });
 });
 
 bot.command('progress', async (ctx) => {
@@ -181,90 +278,302 @@ bot.command('progress', async (ctx) => {
   try {
     const profile = findProfile(telegramId);
     if (!profile) {
-      await ctx.reply('Нет записей. /start');
+      await ctx.reply('Нет записей. Начни с /start');
       return;
     }
     
     const userCheckIns = checkIns.filter(ci => ci.client_id === profile.id).slice(-7);
     if (userCheckIns.length === 0) {
-      await ctx.reply('Нет записей. /checkin');
+      await ctx.reply('Пока нет записей. Сделай первый чек-ин: /checkin');
       return;
     }
     
-    let message = '📈 Прогресс за 7 дней:\n\n';
+    let message = `📊 **ТВОЙ ПРОГРЕСС**\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    
     for (const ci of userCheckIns) {
-      message += `📅 ${ci.date}\n💧 Вода: ${ci.water_ml}мл\n`;
-      if (ci.weight) message += `⚖️ Вес: ${ci.weight}кг\n`;
-      message += '\n';
+      message += `📅 ${ci.date}\n`;
+      message += `💧 Вода: ${ci.water_ml}мл`;
+      if (ci.weight) message += ` | ⚖️ Вес: ${ci.weight}кг`;
+      message += `\n\n`;
     }
-    await ctx.reply(message);
+    
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    const avgWater = Math.round(userCheckIns.reduce((sum, ci) => sum + ci.water_ml, 0) / userCheckIns.length);
+    message += `📈 Среднее потребление воды: ${avgWater}мл/день`;
+    
+    await ctx.reply(message, { parse_mode: 'Markdown' });
   } catch (e) {
     console.error(e);
     await ctx.reply('Ошибка.');
   }
 });
 
-bot.on('message:text', async (ctx) => {
-  const userId = ctx.from?.id;
-  const state = userStates.get(userId);
-  if (!state) {
-    await ctx.reply('Команды: /start, /survey, /plan, /checkin, /progress');
-    return;
-  }
+bot.on('callback_query', async (ctx) => {
+  const callbackData = ctx.callbackQuery.data;
+  const userId = ctx.callbackQuery.from.id;
+  const telegramId = userId.toString();
   
-  const text = ctx.message.text;
+  await ctx.answerCallbackQuery();
   
-  if (state.step === 'goals') {
-    state.data.goals = text;
+  if (callbackData.startsWith('goal_')) {
+    const goal = callbackData.replace('goal_', '');
+    const state = userStates.get(userId) || { step: '', data: { telegramId } };
     state.step = 'restrictions';
+    state.data.goals = goal;
     userStates.set(userId, state);
-    await ctx.reply('2️⃣ Ограничения? (или "нет")');
-  } else if (state.step === 'restrictions') {
-    state.data.restrictions = text.toLowerCase() === 'нет' ? '' : text;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '✅ Нет ограничений', callback_data: 'restrict_none' }],
+        [{ text: '🥛 Аллергия на молоко', callback_data: 'restrict_молоко' }],
+        [{ text: '🥜 Аллергия на орехи', callback_data: 'restrict_орехи' }],
+        [{ text: '🥗 Вегетарианец', callback_data: 'restrict_вегетарианец' }],
+        [{ text: '🍖 Веган', callback_data: 'restrict_веган' }]
+      ]
+    };
+    
+    await ctx.editMessageText(`📋 **ОТЛИЧНО!**
+
+🎯 Цель: *${goal}*
+
+❓ Есть ли у тебя ограничения в питании?`, {
+      reply_markup: keyboard,
+      parse_mode: 'Markdown'
+    });
+    
+  } else if (callbackData.startsWith('restrict_')) {
+    const restrictions = callbackData.replace('restrict_', '');
+    const state = userStates.get(userId);
+    if (!state) return;
+    
     state.step = 'budget';
+    state.data.restrictions = restrictions === 'none' ? 'Нет' : restrictions;
     userStates.set(userId, state);
-    await ctx.reply('3️⃣ Бюджет? (Низкий/Средний/Высокий)');
-  } else if (state.step === 'budget') {
-    state.data.budget = text;
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '💰 Низкий', callback_data: 'budget_Низкий' }],
+        [{ text: '💰💰 Средний', callback_data:budget_Средний' }],
+        [{ text: '💰💰💰 Высокий', callback_data: 'budget_Высокий' }]
+      ]
+    };
+    
+    await ctx.editMessageText(`📋 **ПРОДОЛЖАЕМ**
+
+❓ Какой у тебя бюджет на питание в месяц?`, {
+      reply_markup: keyboard,
+      parse_mode: 'Markdown'
+    });
+    
+  } else if (callbackData.startsWith('budget_')) {
+    const budget = callbackData.replace('budget_', '');
+    const state = userStates.get(userId);
+    if (!state) return;
+    
     try {
-      let profile = findProfile(state.data.telegramId);
+      let profile = findProfile(telegramId);
       if (!profile) {
-        profile = createProfile(state.data.telegramId, ctx.from?.first_name || 'User');
+        profile = createProfile(telegramId, ctx.callbackQuery.from.first_name || 'User');
       }
       
       createSurvey(profile.id, {
         goals: state.data.goals,
         restrictions: state.data.restrictions,
-        budget: state.data.budget
+        budget: budget
       });
       
       userStates.delete(userId);
-      await ctx.reply('✅ Анкета сохранена!\n/plan - получить план');
+      
+      await ctx.editMessageText(`✅ **АНКЕТА СОХРАНЕНА!**
+
+📊 Твои данные:
+• Цель: ${state.data.goals}
+• Ограничения: ${state.data.restrictions}
+• Бюджет: ${budget}
+
+🎯 Теперь можешь получить план питания!`, {
+        parse_mode: 'Markdown'
+      });
+      
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🍽️ Получить план питания', callback_data: 'cmd_plan' }]
+        ]
+      };
+      await ctx.reply('Нажми кнопку ниже:', { reply_markup: keyboard });
+      
     } catch (e) {
       console.error(e);
-      await ctx.reply('Ошибка сохранения.');
+      await ctx.editMessageText('Ошибка сохранения. Попробуй позже.');
     }
-  } else if (state.step === 'checkin_water') {
-    state.data.water = text;
-    state.step = 'checkin_weight';
-    userStates.set(userId, state);
-    await ctx.reply('2️⃣ Вес (кг) или "нет"?');
-  } else if (state.step === 'checkin_weight') {
-    state.data.weight = text.toLowerCase() === 'нет' ? '' : text;
-    state.step = 'checkin_food';
-    userStates.set(userId, state);
-    await ctx.reply('3️⃣ Ели вне плана? (или "нет")');
-  } else if (state.step === 'checkin_food') {
+    
+  } else if (callbackData.startsWith('water_')) {
+    const water = callbackData.replace('water_', '');
+    const state = userStates.get(userId) || { step: '', data: { telegramId } };
+    
+    if (water === 'custom') {
+      state.step = 'checkin_water';
+      userStates.set(userId, state);
+      await ctx.editMessageText('📝 Введи количество воды в миллилитрах:\n\nНапример: 1500');
+    } else {
+      state.step = 'checkin_weight';
+      state.data.water = water;
+      userStates.set(userId, state);
+      
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '⚖️ Указать вес', callback_data: 'weight_yes' }],
+          [{ text: '❌ Пропустить', callback_data: 'weight_no' }]
+        ]
+      };
+      
+      await ctx.editMessageText(`💧 Вода: ${water}мл\n\n❓ Хочешь указать сегодняшний вес?`, {
+        reply_markup: keyboard
+      });
+    }
+    
+  } else if (callbackData.startsWith('weight_')) {
+    const state = userStates.get(userId);
+    if (!state) return;
+    
+    if (callbackData === 'weight_yes') {
+      await ctx.editMessageText('Введи свой вес в кг:\n\nНапример: 75');
+    } else {
+      state.step = 'checkin_food';
+      userStates.set(userId, state);
+      
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '✅ Всё по плану', callback_data: 'food_none' }],
+          [{ text: '🍔 Ел(а) вне плана', callback_data: 'food_custom' }]
+        ]
+      };
+      
+      await ctx.editMessageText('❓ Как прошёл день с питанием?', {
+        reply_markup: keyboard
+      });
+    }
+    
+  } else if (callbackData.startsWith('food_')) {
+    const state = userStates.get(userId);
+    if (!state) return;
+    
+    const food = callbackData.replace('food_', '');
+    
     try {
-      let profile = findProfile(state.data.telegramId);
+      let profile = findProfile(telegramId);
       if (!profile) {
-        profile = createProfile(state.data.telegramId, ctx.from?.first_name || 'User');
+        profile = createProfile(telegramId, ctx.callbackQuery.from.first_name || 'User');
       }
       
       createCheckIn(profile.id, {
         water_ml: parseInt(state.data.water),
         weight: state.data.weight ? parseFloat(state.data.weight) : null,
-        food_log: text.toLowerCase() === 'нет' ? '' : text
+        food_log: food === 'none' ? '' : 'Ел(а) вне плана'
+      });
+      
+      userStates.delete(userId);
+      
+      await ctx.editMessageText(`✅ **ЧЕК-ИН СОХРАНЕН!**
+
+📊 Сегодня:
+💧 Вода: ${state.data.water}мл${state.data.weight ? '\n⚖️ Вес: ' + state.data.weight + 'кг' : ''}
+
+Продолжай в том же духе! 💪`, {
+        parse_mode: 'Markdown'
+      });
+      
+    } catch (e) {
+      console.error(e);
+      await ctx.editMessageText('Ошибка. Попробуй позже.');
+    }
+    
+  } else if (callbackData === 'cmd_survey') {
+    ctx.callbackQuery.message = null;
+    await ctx.deleteMessage();
+    await bot.api.sendMessage(userId, 'Начинаю анкету...');
+    await bot.command('survey')(ctx);
+  } else if (callbackData === 'cmd_checkin') {
+    await ctx.deleteMessage();
+    await bot.command('checkin')(ctx);
+  } else if (callbackData === 'cmd_progress') {
+    await ctx.deleteMessage();
+    await bot.command('progress')(ctx);
+  } else if (callbackData === 'cmd_plan') {
+    await ctx.deleteMessage();
+    await bot.command('plan')(ctx);
+  }
+});
+
+bot.on('message:text', async (ctx) => {
+  const userId = ctx.from?.id;
+  const telegramId = ctx.from?.id.toString();
+  const text = ctx.message.text;
+  const state = userStates.get(userId);
+  
+  if (!state) {
+    const keyboard = {
+      keyboard: [
+        ['📋 Заполнить анкету'],
+        ['🍽️ Получить план питания'],
+        ['📝 Чек-ин'],
+        ['📊 Мой прогресс']
+      ],
+      resize_keyboard: true
+    };
+    await ctx.reply('Выбери действие из меню ниже:', { reply_markup: keyboard });
+    return;
+  }
+  
+  if (state.step === 'checkin_water' && text.match(/^\d+$/)) {
+    state.data.water = text;
+    state.step = 'checkin_weight';
+    userStates.set(userId, state);
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '⚖️ Указать вес', callback_data: 'weight_yes' }],
+        [{ text: '❌ Пропустить', callback_data: 'weight_no' }]
+      ]
+    };
+    
+    await ctx.reply(`💧 Вода: ${text}мл\n\n❓ Хочешь указать сегодняшний вес?`, { reply_markup: keyboard });
+    return;
+  }
+  
+  if (state.step === 'checkin_weight' && text.match(/^\d+(\.\d+)?$/)) {
+    state.data.weight = text;
+    state.step = 'checkin_food';
+    userStates.set(userId, state);
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '✅ Всё по плану', callback_data: 'food_none' }],
+        [{ text: '🍔 Ел(а) вне плана', callback_data: 'food_custom' }]
+      ]
+    };
+    
+    await ctx.reply('❓ Как прошёл день с питанием?', { reply_markup: keyboard });
+    return;
+  }
+  
+  if (state.step === 'checkin_weight' && text.toLowerCase() === 'нет') {
+    state.data.weight = '';
+    state.step = 'checkin_food';
+    userStates.set(userId, state);
+    
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '✅ Всё по плану', callback_data: 'food_none' }],
+        [{ text: '🍔 Ел(а) вне плана', callback_data: 'food_custom' }]
+      ]
+    };
+    
+    await ctx.reply('❓ Как прошёл день с питанием?', { reply_markup: keyboard });
+    return;
+  }
+});
       });
       
       userStates.delete(userId);
