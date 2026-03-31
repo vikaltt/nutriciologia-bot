@@ -397,7 +397,7 @@ bot.on('callback_query', async (ctx) => {
     const keyboard = {
       inline_keyboard: [
         [{ text: '💰 Низкий', callback_data: 'budget_Низкий' }],
-        [{ text: '💰💰 Средний', callback_data:budget_Средний' }],
+        [{ text: '💰💰 Средний', callback_data: 'budget_Средний' }],
         [{ text: '💰💰💰 Высокий', callback_data: 'budget_Высокий' }]
       ]
     };
