@@ -3,15 +3,14 @@ import http from 'http';
 import { Bot } from 'grammy';
 import cron from 'node-cron';
 import 'dotenv/config';
-import PocketBase from 'pocketbase';
 import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const PB_URL = process.env.POCKETBASE_URL || 'http://localhost:8090';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
-const pb = new PocketBase(PB_URL);
 const bot = new Bot(BOT_TOKEN);
 
 const openai = new OpenAI({
@@ -22,20 +21,90 @@ const openai = new OpenAI({
 const app = express();
 app.use(express.json());
 
+const DATA_DIR = './data';
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadData(filename) {
+  const filePath = path.join(DATA_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  }
+  return [];
+}
+
+function saveData(filename, data) {
+  const filePath = path.join(DATA_DIR, filename);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+const profiles = loadData('profiles.json');
+const surveys = loadData('surveys.json');
+const nutritionPlans = loadData('nutrition_plans.json');
+const checkIns = loadData('check_ins.json');
+
 const userStates = new Map();
 
-async function getOrCreateProfile(telegramId, firstName) {
-  const users = await pb.collection('profiles').getList(1, 1, {
-    filter: `telegram_id = "${telegramId}"`
-  });
-  if (users.items.length === 0) {
-    return await pb.collection('profiles').create({
-      telegram_id: telegramId,
-      full_name: firstName,
-      role: 'client'
-    });
-  }
-  return users.items[0];
+function findProfile(telegramId) {
+  return profiles.find(p => p.telegram_id === telegramId);
+}
+
+function createProfile(telegramId, firstName) {
+  const profile = {
+    id: 'p' + Date.now(),
+    telegram_id: telegramId,
+    full_name: firstName,
+    role: 'client',
+    created: new Date().toISOString()
+  };
+  profiles.push(profile);
+  saveData('profiles.json', profiles);
+  return profile;
+}
+
+function findSurvey(clientId) {
+  const clientProfile = profiles.find(p => p.id === clientId);
+  if (!clientProfile) return null;
+  return surveys.find(s => s.client_id === clientId);
+}
+
+function createSurvey(clientId, data) {
+  const survey = {
+    id: 's' + Date.now(),
+    client_id: clientId,
+    ...data,
+    status: 'new',
+    created: new Date().toISOString()
+  };
+  surveys.push(survey);
+  saveData('surveys.json', surveys);
+  return survey;
+}
+
+function createNutritionPlan(clientId, planData) {
+  const plan = {
+    id: 'np' + Date.now(),
+    client_id: clientId,
+    plan_data: planData,
+    status: 'active',
+    created: new Date().toISOString()
+  };
+  nutritionPlans.push(plan);
+  saveData('nutrition_plans.json', nutritionPlans);
+  return plan;
+}
+
+function createCheckIn(clientId, data) {
+  const checkIn = {
+    id: 'ci' + Date.now(),
+    client_id: clientId,
+    ...data,
+    date: new Date().toISOString().split('T')[0]
+  };
+  checkIns.push(checkIn);
+  saveData('check_ins.json', checkIns);
+  return checkIn;
 }
 
 async function generateNutritionPlan(profile, survey) {
@@ -56,31 +125,42 @@ bot.command('start', async (ctx) => {
   const telegramId = ctx.from?.id.toString() || '';
   const firstName = ctx.from?.first_name || '';
   try {
-    await getOrCreateProfile(telegramId, firstName);
+    let profile = findProfile(telegramId);
+    if (!profile) {
+      profile = createProfile(telegramId, firstName);
+    }
     await ctx.reply(`👋 Добро пожаловать, ${firstName}!\n\n/survey - анкета\n/plan - план питания\n/checkin - чек-ин\n/progress - прогресс`);
   } catch (e) {
+    console.error(e);
     await ctx.reply('Ошибка. Попробуйте позже.');
   }
 });
 
 bot.command('survey', async (ctx) => {
   const userId = ctx.from?.id;
-  userStates.set(userId, { step: 'goals', data: { telegramId: ctx.from?.id.toString() } });
+  const telegramId = ctx.from?.id.toString();
+  userStates.set(userId, { step: 'goals', data: { telegramId } });
   await ctx.reply('📋 Анкета\n\n1️⃣ Цель? (Похудеть/Набрать/Поддержать/Здоровье)');
 });
 
 bot.command('plan', async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   try {
-    const profile = await getOrCreateProfile(telegramId, ctx.from?.first_name);
-    const surveys = await pb.collection('surveys').getList(1, 1, { filter: `client_id = "${profile.id}"`, sort: '-created' });
-    if (surveys.items.length === 0) {
+    let profile = findProfile(telegramId);
+    if (!profile) {
+      await ctx.reply('Сначала /start');
+      return;
+    }
+    
+    const survey = findSurvey(profile.id);
+    if (!survey) {
       await ctx.reply('Сначала /survey');
       return;
     }
+    
     await ctx.reply('🔄 Генерирую план...');
-    const planData = await generateNutritionPlan(profile, surveys.items[0]);
-    await pb.collection('nutrition_plans').create({ client_id: profile.id, plan_data: planData, status: 'active' });
+    const planData = await generateNutritionPlan(profile, survey);
+    createNutritionPlan(profile.id, planData);
     await ctx.reply(`✅ План: ${planData.calories}ккал, белки:${planData.protein}г, жиры:${planData.fat}г, углеводы:${planData.carbs}г`);
   } catch (e) {
     console.error(e);
@@ -90,21 +170,35 @@ bot.command('plan', async (ctx) => {
 
 bot.command('checkin', async (ctx) => {
   const userId = ctx.from?.id;
-  userStates.set(userId, { step: 'checkin_water', data: { telegramId: ctx.from?.id.toString() } });
+  const telegramId = ctx.from?.id.toString();
+  userStates.set(userId, { step: 'checkin_water', data: { telegramId } });
   await ctx.reply('📝 Чек-ин\n\n1️⃣ Вода (мл)?');
 });
 
 bot.command('progress', async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   try {
-    const profile = await getOrCreateProfile(telegramId, ctx.from?.first_name);
-    const checkIns = await pb.collection('check_ins').getList(1, 7, { filter: `client_id = "${profile.id}"`, sort: '-date' });
-    if (checkIns.items.length === 0) {
+    const profile = findProfile(telegramId);
+    if (!profile) {
+      await ctx.reply('Нет записей. /start');
+      return;
+    }
+    
+    const userCheckIns = checkIns.filter(ci => ci.client_id === profile.id).slice(-7);
+    if (userCheckIns.length === 0) {
       await ctx.reply('Нет записей. /checkin');
       return;
     }
-    await ctx.reply('📈 Прогресс за 7 дней:\n' + checkIns.items.map(ci => `${ci.date}: ${ci.water_ml}мл`).join('\n'));
+    
+    let message = '📈 Прогресс за 7 дней:\n\n';
+    for (const ci of userCheckIns) {
+      message += `📅 ${ci.date}\n💧 Вода: ${ci.water_ml}мл\n`;
+      if (ci.weight) message += `⚖️ Вес: ${ci.weight}кг\n`;
+      message += '\n';
+    }
+    await ctx.reply(message);
   } catch (e) {
+    console.error(e);
     await ctx.reply('Ошибка.');
   }
 });
@@ -132,17 +226,21 @@ bot.on('message:text', async (ctx) => {
   } else if (state.step === 'budget') {
     state.data.budget = text;
     try {
-      const profile = await getOrCreateProfile(state.data.telegramId, ctx.from?.first_name);
-      await pb.collection('surveys').create({
-        client_id: profile.id,
+      let profile = findProfile(state.data.telegramId);
+      if (!profile) {
+        profile = createProfile(state.data.telegramId, ctx.from?.first_name || 'User');
+      }
+      
+      createSurvey(profile.id, {
         goals: state.data.goals,
         restrictions: state.data.restrictions,
-        budget: state.data.budget,
-        status: 'new'
+        budget: state.data.budget
       });
+      
       userStates.delete(userId);
       await ctx.reply('✅ Анкета сохранена!\n/plan - получить план');
     } catch (e) {
+      console.error(e);
       await ctx.reply('Ошибка сохранения.');
     }
   } else if (state.step === 'checkin_water') {
@@ -157,17 +255,21 @@ bot.on('message:text', async (ctx) => {
     await ctx.reply('3️⃣ Ели вне плана? (или "нет")');
   } else if (state.step === 'checkin_food') {
     try {
-      const profile = await getOrCreateProfile(state.data.telegramId, ctx.from?.first_name);
-      await pb.collection('check_ins').create({
-        client_id: profile.id,
+      let profile = findProfile(state.data.telegramId);
+      if (!profile) {
+        profile = createProfile(state.data.telegramId, ctx.from?.first_name || 'User');
+      }
+      
+      createCheckIn(profile.id, {
         water_ml: parseInt(state.data.water),
         weight: state.data.weight ? parseFloat(state.data.weight) : null,
-        food_log: text.toLowerCase() === 'нет' ? '' : text,
-        date: new Date().toISOString().split('T')[0]
+        food_log: text.toLowerCase() === 'нет' ? '' : text
       });
+      
       userStates.delete(userId);
       await ctx.reply('✅ Чек-ин сохранён!');
     } catch (e) {
+      console.error(e);
       await ctx.reply('Ошибка.');
     }
   }
@@ -177,10 +279,10 @@ app.use('/bot', (req, res) => {
   bot.handleUpdate(req.body, res);
 });
 
-app.get('/', (req, res) => res.send('Bot running'));
+app.get('/', (req, res) => res.send('Nutriciologia Bot running'));
 
 const server = http.createServer(app);
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server on port ${PORT}`);
