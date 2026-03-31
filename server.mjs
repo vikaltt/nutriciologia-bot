@@ -131,27 +131,70 @@ bot.command('start', async (ctx) => {
       profile = createProfile(telegramId, firstName);
     }
     
-    const keyboard = {
-      keyboard: [
-        ['📋 Заполнить анкету'],
-        ['🍽️ Получить план питания'],
-        ['📝 Чек-ин'],
-        ['📊 Мой прогресс']
-      ],
-      resize_keyboard: true
-    };
-    
-    await ctx.reply(`👋 Добро пожаловать, ${firstName}!
-
-Я помогу тебе составить персональный план питания и отслеживать прогресс.
-
-Выбери действие:`, {
-      reply_markup: keyboard
-    });
+    showMainMenu(ctx, firstName);
   } catch (e) {
     console.error(e);
     await ctx.reply('Ошибка. Попробуйте позже.');
   }
+});
+
+function showMainMenu(ctx, firstName) {
+  const keyboard = {
+    keyboard: [
+      ['📋 Заполнить анкету'],
+      ['🍽️ Получить план питания'],
+      ['📝 Чек-ин'],
+      ['📊 Мой прогресс']
+    ],
+    resize_keyboard: true
+  };
+  
+  ctx.reply(`👋 Привет, ${firstName}!
+
+Я помогу тебе составить персональный план питания и отслеживать прогресс.
+
+Выбери действие:`, {
+    reply_markup: keyboard
+  });
+}
+
+bot.on('message:text', async (ctx) => {
+  const text = ctx.message.text;
+  const userId = ctx.from?.id;
+  const telegramId = ctx.from?.id.toString();
+  
+  if (text === '📋 Заполнить анкету') {
+    await ctx.deleteMessage();
+    await bot.command('survey')(ctx);
+    return;
+  }
+  
+  if (text === '🍽️ Получить план питания') {
+    await ctx.deleteMessage();
+    await bot.command('plan')(ctx);
+    return;
+  }
+  
+  if (text === '📝 Чек-ин') {
+    await ctx.deleteMessage();
+    await bot.command('checkin')(ctx);
+    return;
+  }
+  
+  if (text === '📊 Мой прогресс') {
+    await ctx.deleteMessage();
+    await bot.command('progress')(ctx);
+    return;
+  }
+  
+  const state = userStates.get(userId);
+  
+  if (!state) {
+    showMainMenu(ctx, ctx.from?.first_name || 'друг');
+    return;
+  }
+  
+  // ... rest of text handling
 });
 
 bot.command('survey', async (ctx) => {
@@ -513,16 +556,7 @@ bot.on('message:text', async (ctx) => {
   const state = userStates.get(userId);
   
   if (!state) {
-    const keyboard = {
-      keyboard: [
-        ['📋 Заполнить анкету'],
-        ['🍽️ Получить план питания'],
-        ['📝 Чек-ин'],
-        ['📊 Мой прогресс']
-      ],
-      resize_keyboard: true
-    };
-    await ctx.reply('Выбери действие из меню ниже:', { reply_markup: keyboard });
+    showMainMenu(ctx, ctx.from?.first_name || 'друг');
     return;
   }
   
@@ -572,16 +606,6 @@ bot.on('message:text', async (ctx) => {
     
     await ctx.reply('❓ Как прошёл день с питанием?', { reply_markup: keyboard });
     return;
-  }
-});
-      });
-      
-      userStates.delete(userId);
-      await ctx.reply('✅ Чек-ин сохранён!');
-    } catch (e) {
-      console.error(e);
-      await ctx.reply('Ошибка.');
-    }
   }
 });
 
