@@ -712,17 +712,28 @@ app.get('/admin/plans', (req, res) => {
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+// На Render.com всегда используем webhook с автоматическим URL
+const RENDER_WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL
+  ? `${process.env.RENDER_EXTERNAL_URL}/bot`
+  : WEBHOOK_URL;
+
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server on port ${PORT}`);
-  
-  if (WEBHOOK_URL) {
-    await bot.api.setWebhook(WEBHOOK_URL);
-    console.log(`Webhook: ${WEBHOOK_URL}`);
+
+  if (RENDER_WEBHOOK_URL) {
+    try {
+      await bot.api.setWebhook(RENDER_WEBHOOK_URL);
+      console.log(`✅ Webhook установлен: ${RENDER_WEBHOOK_URL}`);
+    } catch (err) {
+      console.error('❌ Ошибка установки webhook:', err.message);
+      console.log('🔄 Запускаю long polling как fallback...');
+      await bot.start();
+    }
   } else {
+    console.log('⚠️ WEBHOOK_URL не установлен, запускаю long polling...');
     await bot.start();
-    console.log('Long polling');
   }
-  
+
   cron.schedule('0 9 * * *', () => console.log('🌅 Morning'));
   cron.schedule('0 21 * * *', () => console.log('🌙 Evening'));
 });
