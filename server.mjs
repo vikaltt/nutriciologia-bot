@@ -609,7 +609,7 @@ bot.on('message:text', async (ctx) => {
   }
 });
 
-app.use('/bot', (req, res) => {
+app.post('/bot', (req, res) => {
   bot.handleUpdate(req.body, res);
 });
 
